@@ -91,9 +91,7 @@ python src/dsm.py --cities 100 --seed 42
 
 ## DOI
 
-[![DOI](https://zenodo.org/badge/DOI/YOUR_DOI_HERE.svg)](https://doi.org/YOUR_DOI_HERE)
-
-> Replace `YOUR_DOI_HERE` with the actual DOI after Zenodo upload.
+[![DOI](https://zenodo.org/badge/DOI/19096781.svg)](https://doi.org/10.5281/zenodo.19096781)
 
 ## Citation
 
@@ -101,7 +99,7 @@ If you use DSM in your research, please cite:
 
 ```
 Balban, D. (2026). Trigonometry-Free TSP Heuristics for Embedded Systems:
-A Compass-Based Matching Approach. Working Paper. DOI: YOUR_DOI_HERE
+A Compass-Based Matching Approach. Working Paper. DOI: 10.5281/zenodo.19096781
 ```
 
 BibTeX:
