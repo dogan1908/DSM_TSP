@@ -113,7 +113,7 @@ BibTeX:
   year      = {2026},
   month     = {March},
   type      = {Working Paper},
-  doi       = {YOUR_DOI_HERE}
+  doi       = {10.5281/zenodo.19096781}
 }
 ```
 
