@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TSP Uhr-Visualisierung</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #fff; font-family: -apple-system, 'Segoe UI', sans-serif; padding: 20px; }
+  .wrap { display: flex; gap: 0; align-items: flex-start; flex-wrap: wrap; max-width: 900px; margin: 0 auto; }
+  .map-side { flex: 1; min-width: 340px; }
+  .clock-side { flex: 1; min-width: 300px; display: flex; flex-direction: column; align-items: center; padding-top: 20px; }
+  .city-btn { padding: 6px 14px; border-radius: 8px; border: 1.5px solid #ccc; background: #fff; color: #333; font: 500 13px -apple-system, sans-serif; cursor: pointer; transition: background .15s; }
+  .city-btn:hover { background: #f0f0f0; }
+  .city-btn.active { color: #fff; }
+  .info { font: 400 13px/1.6 -apple-system, sans-serif; color: #888; text-align: center; margin-top: 8px; min-height: 40px; }
+  .clock-time { font: 500 32px 'SF Mono', 'Consolas', monospace; color: #333; margin: 10px 0 4px; }
+  .clock-label { font: 400 13px -apple-system, sans-serif; color: #888; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="map-side">
+    <svg id="map" width="100%" viewBox="0 0 420 460"></svg>
+  </div>
+  <div class="clock-side">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:12px">
+      <button class="city-btn" style="border-color:#D85A30" onclick="selCity(0)">City A</button>
+      <button class="city-btn" style="border-color:#1D9E75" onclick="selCity(1)">City B</button>
+      <button class="city-btn" style="border-color:#534AB7" onclick="selCity(2)">City C</button>
+      <button class="city-btn" style="border-color:#BA7517" onclick="selCity(3)">City D</button>
+    </div>
+    <svg id="clock" width="280" height="280" viewBox="0 0 280 280"></svg>
+    <div class="clock-time" id="ctime">&ndash;</div>
+    <div class="clock-label" id="clabel">Stadt ausw&auml;hlen</div>
+    <div class="info" id="cinfo"></div>
+  </div>
+</div>
+<script>
+var cities=[
+  {n:'A',x:280,y:340,ein:1.5,aus:4.0,einDeg:330,ausDeg:281,col:'#D85A30',einTo:'B',ausTo:'D'},
+  {n:'B',x:230,y:230,ein:1.5,aus:2.5,einDeg:150,ausDeg:255,col:'#1D9E75',einTo:'A',ausTo:'D'},
+  {n:'C',x:310,y:60,ein:4.0,aus:4.5,einDeg:220,ausDeg:197,col:'#534AB7',einTo:'B',ausTo:'A'},
+  {n:'D',x:70,y:270,ein:2.5,aus:4.0,einDeg:75,ausDeg:101,col:'#BA7517',einTo:'B',ausTo:'A'}
+];
+
+var edges=[
+  {a:0,b:1,km:1.5,solid:true},
+  {a:1,b:3,km:2.5,solid:true},
+  {a:0,b:3,km:4.0,solid:false},
+  {a:1,b:2,km:4.0,solid:false},
+  {a:0,b:2,km:4.5,solid:false}
+];
+
+function toClock(d){d=((d%360)+360)%360;var h=Math.floor(d/30);if(!h)h=12;var m=Math.round((d/30-Math.floor(d/30))*60);if(m===60){h=h%12+1;m=0;}return h+':'+String(m).padStart(2,'0');}
+
+function drawMap(sel){
+  var s='';
+  edges.forEach(function(e){
+    var a=cities[e.a],b=cities[e.b];
+    var col=e.solid?'#1D9E75':'#D85A30';
+    var w=e.solid?2.5:1.5;
+    var op=e.solid?0.7:0.4;
+    var dash=e.solid?'':'8 4';
+    var hi=(sel!==null&&(e.a===sel||e.b===sel));
+    if(sel!==null&&!hi)op*=0.3;
+    s+='<line x1="'+a.x+'" y1="'+a.y+'" x2="'+b.x+'" y2="'+b.y+'" stroke="'+col+'" stroke-width="'+w+'" opacity="'+op+'"'+(dash?' stroke-dasharray="'+dash+'"':'')+'/>';
+    var mx=(a.x+b.x)/2,my=(a.y+b.y)/2-8;
+    s+='<text x="'+mx+'" y="'+my+'" text-anchor="middle" style="font:500 11px monospace;fill:'+(e.solid?'#1D9E75':'#D85A30')+';opacity:'+(sel!==null&&!hi?0.2:0.8)+'">'+e.km+' km</text>';
+  });
+  cities.forEach(function(c,i){
+    var op=(sel===null||sel===i)?0.9:0.25;
+    s+='<circle cx="'+c.x+'" cy="'+c.y+'" r="20" fill="'+c.col+'" opacity="'+op+'" style="cursor:pointer" onclick="selCity('+i+')"/>';
+    s+='<text x="'+c.x+'" y="'+c.y+'" text-anchor="middle" dominant-baseline="central" style="font:500 14px sans-serif;fill:#fff;opacity:'+op+';pointer-events:none">'+c.n+'</text>';
+    s+='<text x="'+c.x+'" y="'+(c.y+34)+'" text-anchor="middle" style="font:400 10px sans-serif;fill:#999;opacity:'+(sel===null||sel===i?1:0.2)+'">Ein '+c.ein+' \u00b7 Aus '+c.aus+'</text>';
+  });
+  s+='<line x1="20" y1="430" x2="56" y2="430" stroke="#1D9E75" stroke-width="2.5"/>';
+  s+='<text x="64" y="434" style="font:400 11px sans-serif;fill:#999">Eingang (k\u00fcrzeste)</text>';
+  s+='<line x1="200" y1="430" x2="236" y2="430" stroke="#D85A30" stroke-width="1.5" stroke-dasharray="8 4"/>';
+  s+='<text x="244" y="434" style="font:400 11px sans-serif;fill:#999">Ausgang (zweitk\u00fcrzeste)</text>';
+  document.getElementById('map').innerHTML=s;
+}
+
+var activeDrag=null;
+var einAngle=0,ausAngle=0;
+var selIdx=null;
+
+function drawClock(){
+  var cx=140,cy=140,r=120;
+  var s='';
+  s+='<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="none" stroke="#e0e0e0" stroke-width="1"/>';
+  for(var i=0;i<60;i++){
+    var a=(i/60)*Math.PI*2-Math.PI/2;
+    var major=i%5===0;
+    var inner=r-(major?12:5),outer=r-1;
+    s+='<line x1="'+(cx+Math.cos(a)*inner)+'" y1="'+(cy+Math.sin(a)*inner)+'" x2="'+(cx+Math.cos(a)*outer)+'" y2="'+(cy+Math.sin(a)*outer)+'" stroke="'+(major?'#999':'#ccc')+'" stroke-width="'+(major?1.5:0.5)+'"/>';
+  }
+  for(var i=1;i<=12;i++){
+    var a=(i/12)*Math.PI*2-Math.PI/2;
+    var tx=cx+Math.cos(a)*(r-24),ty=cy+Math.sin(a)*(r-24);
+    s+='<text x="'+tx+'" y="'+ty+'" text-anchor="middle" dominant-baseline="central" style="font:500 14px sans-serif;fill:#888">'+i+'</text>';
+  }
+  if(selIdx!==null){
+    var c=cities[selIdx];
+    var aE=(einAngle-90)*Math.PI/180;
+    var aA=(ausAngle-90)*Math.PI/180;
+    var eLen=r-30,aLen=r-45;
+    s+='<line x1="'+cx+'" y1="'+cy+'" x2="'+(cx+Math.cos(aE)*eLen)+'" y2="'+(cy+Math.sin(aE)*eLen)+'" stroke="'+c.col+'" stroke-width="4" stroke-linecap="round" style="cursor:grab" onmousedown="startDrag(event,\'ein\')" ontouchstart="startDrag(event,\'ein\')"/>';
+    s+='<circle cx="'+(cx+Math.cos(aE)*eLen)+'" cy="'+(cy+Math.sin(aE)*eLen)+'" r="6" fill="'+c.col+'" style="cursor:grab" onmousedown="startDrag(event,\'ein\')" ontouchstart="startDrag(event,\'ein\')"/>';
+    s+='<text x="'+(cx+Math.cos(aE)*(eLen+18))+'" y="'+(cy+Math.sin(aE)*(eLen+18))+'" text-anchor="middle" dominant-baseline="central" style="font:500 12px sans-serif;fill:'+c.col+'">'+c.ein+' km</text>';
+    s+='<line x1="'+cx+'" y1="'+cy+'" x2="'+(cx+Math.cos(aA)*aLen)+'" y2="'+(cy+Math.sin(aA)*aLen)+'" stroke="'+c.col+'" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="6 4" opacity=".55" style="cursor:grab" onmousedown="startDrag(event,\'aus\')" ontouchstart="startDrag(event,\'aus\')"/>';
+    s+='<circle cx="'+(cx+Math.cos(aA)*aLen)+'" cy="'+(cy+Math.sin(aA)*aLen)+'" r="5" fill="'+c.col+'" opacity=".55" style="cursor:grab" onmousedown="startDrag(event,\'aus\')" ontouchstart="startDrag(event,\'aus\')"/>';
+    s+='<text x="'+(cx+Math.cos(aA)*(aLen+18))+'" y="'+(cy+Math.sin(aA)*(aLen+18))+'" text-anchor="middle" dominant-baseline="central" style="font:400 12px sans-serif;fill:'+c.col+';opacity:.6">'+c.aus+' km</text>';
+  }
+  s+='<circle cx="'+cx+'" cy="'+cy+'" r="5" fill="'+(selIdx!==null?cities[selIdx].col:'#ccc')+'"/>';
+  document.getElementById('clock').innerHTML=s;
+  if(selIdx!==null){
+    var c=cities[selIdx];
+    document.getElementById('ctime').textContent=toClock(einAngle)+' / '+toClock(ausAngle);
+    document.getElementById('ctime').style.color=c.col;
+    document.getElementById('clabel').textContent='City '+c.n+' \u2014 Eingang (solid) / Ausgang (gestrichelt)';
+    document.getElementById('cinfo').innerHTML='Eingang \u2192 '+c.einTo+' ('+c.ein+' km) | Ausgang \u2192 '+c.ausTo+' ('+c.aus+' km)';
+  }
+}
+
+function selCity(i){
+  selIdx=i;
+  einAngle=cities[i].einDeg;
+  ausAngle=cities[i].ausDeg;
+  document.querySelectorAll('.city-btn').forEach(function(b,j){
+    b.classList.toggle('active',j===i);
+    if(j===i)b.style.background=cities[j].col;
+    else b.style.background='#fff';
+  });
+  drawMap(i);
+  drawClock();
+}
+
+function startDrag(e,which){
+  e.preventDefault();
+  activeDrag=which;
+}
+
+function onMove(e){
+  if(!activeDrag||selIdx===null)return;
+  var svg=document.getElementById('clock');
+  var rect=svg.getBoundingClientRect();
+  var px,py;
+  if(e.touches){px=e.touches[0].clientX;py=e.touches[0].clientY;}
+  else{px=e.clientX;py=e.clientY;}
+  var x=(px-rect.left)/rect.width*280-140;
+  var y=(py-rect.top)/rect.height*280-140;
+  var angle=(Math.atan2(y,x)*180/Math.PI+90+360)%360;
+  if(activeDrag==='ein')einAngle=angle;
+  else ausAngle=angle;
+  drawClock();
+}
+
+function onUp(){activeDrag=null;}
+
+document.addEventListener('mousemove',onMove);
+document.addEventListener('mouseup',onUp);
+document.addEventListener('touchmove',onMove,{passive:false});
+document.addEventListener('touchend',onUp);
+
+drawMap(null);
+drawClock();
+</script>
+</body>
+</html>

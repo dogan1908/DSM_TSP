@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LBM-TSP Flood — Wellenfront-basiertes TSP — Balban 2026</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600&family=DM+Sans:wght@400;500;700&display=swap');
+:root{--bg:#060a10;--bg2:#0c1218;--bg3:#141c28;--acc:#38bdf8;--acc2:#f472b6;--acc3:#34d399;--warn:#fbbf24;--dim:#475569;--text:#e2e8f0;--brd:#1a2535}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;height:100vh;display:flex;overflow:hidden}
+#side{width:320px;min-width:320px;background:var(--bg2);border-right:1px solid var(--brd);padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;font-size:12px}
+#side h1{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:600;color:var(--acc);letter-spacing:1px}
+#side h1 span{color:var(--acc2);font-weight:300}
+.st{font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:600;color:var(--dim);letter-spacing:2px;text-transform:uppercase;margin-top:6px}
+.desc{font-size:11px;color:var(--dim);line-height:1.5}
+button{font-family:'JetBrains Mono',monospace;font-size:10px;padding:7px 14px;border:1px solid var(--brd);background:var(--bg3);color:var(--text);border-radius:4px;cursor:pointer;transition:all .15s}
+button:hover{background:var(--acc);color:var(--bg);border-color:var(--acc)}
+button.active{background:var(--acc);color:var(--bg)}
+button.go{border-color:var(--acc3);color:var(--acc3)}
+button.go:hover{background:var(--acc3);color:var(--bg)}
+button.warn{border-color:var(--warn);color:var(--warn)}
+button.warn:hover{background:var(--warn);color:var(--bg)}
+.br{display:flex;gap:8px;flex-wrap:wrap}
+.sep{height:1px;background:var(--brd);margin:4px 0}
+.stats{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim);line-height:1.7;background:var(--bg);padding:10px;border-radius:4px;border:1px solid var(--brd)}
+.stats .v{color:var(--acc)}.stats .v2{color:var(--acc3)}.stats .vw{color:var(--warn)}.stats .vr{color:var(--acc2)}
+.pr{display:flex;align-items:center;gap:6px}
+.pr label{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--dim);min-width:80px}
+.pr input[type=range]{flex:1;-webkit-appearance:none;height:3px;background:var(--bg3);border-radius:2px}
+.pr input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;background:var(--acc);border-radius:50%;cursor:pointer}
+.pv{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--acc);min-width:30px;text-align:right}
+#cw{flex:1;position:relative;overflow:hidden;cursor:crosshair}
+canvas{display:block;width:100%;height:100%}
+#overlay{position:absolute;top:12px;right:14px;font-family:'JetBrains Mono',monospace;font-size:10px;color:#1e3050;text-align:right;pointer-events:none;line-height:1.5}
+#toast{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:'JetBrains Mono',monospace;font-size:20px;color:var(--warn);pointer-events:none;opacity:0;transition:opacity .3s}
+#phaseLabel{position:absolute;top:12px;left:14px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--acc3);pointer-events:none;opacity:0;transition:opacity .3s}
+</style>
+</head>
+<body>
+<div id="side">
+<h1>LBM-TSP Flood <span>· Balban 2026</span></h1>
+
+<div class="desc">
+Wellenfront-Expansion von allen Städten gleichzeitig.
+Wo Fronten kollidieren → Voronoi-Grenze → Delaunay-Kante.
+Tour aus dem Nachbarschaftsgraphen.
+</div>
+
+<div class="sep"></div>
+<div class="st">Städte</div>
+<div class="desc">Klick auf Canvas = Stadt platzieren</div>
+<div class="br">
+<button onclick="randomCities(10)">10 zufällig</button>
+<button onclick="randomCities(20)">20 zufällig</button>
+<button onclick="randomCities(50)">50</button>
+<button onclick="randomCities(100)">100</button>
+<button onclick="randomCities(200)">200</button>
+<button onclick="clearAll()">Alle löschen</button>
+</div>
+
+<div class="sep"></div>
+<div class="st">Simulation</div>
+<div class="pr"><label>Geschw.</label><input type="range" id="pSpeed" min="1" max="50" value="12"><span class="pv" id="vSpeed">12</span></div>
+<div class="br">
+<button class="go" id="btnFlood" onclick="startFlood()">▶ Flood starten</button>
+<button onclick="resetFlood()">↺ Reset</button>
+</div>
+<div class="st">Tour-Methode (auf Flood-Graph)</div>
+<div class="br">
+<button class="warn" onclick="buildTour()">Greedy-D</button>
+<button class="warn" onclick="buildHullTour()">Hull+Insert</button>
+</div>
+<div class="st" style="margin-top:6px">Referenz (vollst. Graph)</div>
+<div class="br">
+<button onclick="buildNNTour()">NN</button>
+<button onclick="buildStdGreedy()">Greedy-V</button>
+</div>
+<div class="st" style="margin-top:6px">Nachoptimierung</div>
+<div class="br">
+<button onclick="twoOpt()">✂ 2-opt</button>
+<button onclick="runAll()">▶ Alle vergleichen</button>
+</div>
+
+<div class="sep"></div>
+<div class="st">Anzeige</div>
+<div class="br">
+<button id="btnVoro" onclick="toggleView('voronoi')" class="active">Voronoi</button>
+<button id="btnDens" onclick="toggleView('density')">Dichte</button>
+<button id="btnEdge" onclick="toggleView('edges')">Kanten</button>
+</div>
+
+<div class="sep"></div>
+<div class="st">Ergebnis</div>
+<div class="stats" id="stats">Platziere Städte und starte Flood.</div>
+
+<div class="sep"></div>
+<div class="st">Algorithmus</div>
+<div class="desc" style="font-size:10px;line-height:1.6">
+<b>Flood-basiert (Delaunay-Graph):</b><br>
+• <b>Greedy-D:</b> Kürzeste Delaunay-Kanten<br>
+• <b>Hull+Insert:</b> Hülle aus Voronoi + Cheapest Insertion<br><br>
+<b>Referenz (vollst. Graph, O(N²)):</b><br>
+• <b>NN:</b> Nearest Neighbor (best of N starts)<br>
+• <b>Greedy-V:</b> Standard-Greedy (Bentley 1992)<br><br>
+<b>▶ Alle vergleichen</b> = 4 Methoden + 2-opt
+</div>
+</div>
+
+<div id="cw">
+<canvas id="canvas"></canvas>
+<div id="overlay">LBM-TSP Flood<br>Balban 2026</div>
+<div id="toast"></div>
+<div id="phaseLabel"></div>
+</div>
+
+<script>
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+let WC,HC;
+
+// City colors — perceptually distinct
+const CITY_COLORS=[
+  [56,189,248],[244,114,182],[52,211,153],[251,191,36],[167,139,250],
+  [248,113,113],[45,212,191],[232,121,249],[132,204,22],[96,165,250],
+  [249,115,22],[129,140,248],[251,146,60],[236,72,153],[34,211,238],
+  [163,230,53],[192,132,252],[254,215,170],[110,231,183],[252,165,165],
+  [147,197,253],[255,190,92],[186,166,255],[120,240,200],[255,140,140],
+  [100,220,255],[255,170,210],[180,255,170],[255,220,130],[200,180,255],
+  [130,230,230],[255,200,160],[170,210,255],[255,180,180],[160,255,200],
+  [220,190,255],[200,240,160],[255,210,190],[150,220,240],[240,170,220],
+  [180,250,200],[255,195,145],[170,200,255],[250,190,200],[190,245,180],
+  [230,180,240],[210,240,170],[255,205,175],[160,215,245],[245,185,210]
+];
+
+let cities=[];
+let grid=null;       // owner grid: which city reached this cell first
+let timeGrid=null;   // arrival time grid
+let GW,GH;           // grid dimensions
+const CELL=4;        // pixels per grid cell
+
+let flooding=false;
+let floodQueue=[];
+let floodQueueIdx=0;
+let floodStep=0;
+let floodDone=false;
+let edges=[];        // {a,b,weight} — neighbor edges from Voronoi
+let tour=[];         // final tour indices
+let tourLen=0;
+let nnTourLen=0;     // for comparison
+let lastMethod='';   // 'greedy','hull','2opt'
+let hullIndices=[];  // convex hull for visualization
+let viewMode='voronoi';
+
+function resize(){
+  const w=document.getElementById('cw');
+  WC=w.clientWidth;HC=w.clientHeight;
+  canvas.width=WC;canvas.height=HC;
+  GW=Math.floor(WC/CELL);GH=Math.floor(HC/CELL);
+}
+
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.style.opacity=1;setTimeout(()=>t.style.opacity=0,2000);
+}
+function showPhase(msg){
+  const p=document.getElementById('phaseLabel');
+  p.textContent=msg;p.style.opacity=msg?1:0;
+}
+
+// ===== GRID =====
+function initGrid(){
+  grid=new Int16Array(GW*GH).fill(-1);
+  timeGrid=new Int32Array(GW*GH).fill(999999);
+  floodQueue=[];floodQueueIdx=0;floodStep=0;floodDone=false;edges=[];tour=[];tourLen=0;hullIndices=[];lastMethod='';comparisonResults={};
+}
+
+function cityToGrid(cx,cy){return[Math.floor(cx/CELL),Math.floor(cy/CELL)];}
+
+// ===== FLOOD (BFS wavefront = discrete LBM diffusion) =====
+function startFlood(){
+  if(cities.length<3){toast('Mindestens 3 Städte!');return;}
+  initGrid();
+  flooding=true;
+  showPhase('Phase 1 — Flood');
+
+  // Seed all cities simultaneously
+  for(let i=0;i<cities.length;i++){
+    const[gx,gy]=cityToGrid(cities[i].x,cities[i].y);
+    if(gx>=0&&gx<GW&&gy>=0&&gy<GH){
+      const idx=gy*GW+gx;
+      grid[idx]=i;
+      timeGrid[idx]=0;
+      floodQueue.push({x:gx,y:gy,owner:i,t:0});
+    }
+  }
+}
+
+function floodTick(steps){
+  if(!flooding||floodQueueIdx>=floodQueue.length){
+    if(flooding){
+      flooding=false;
+      floodDone=true;
+      showPhase('Phase 1 fertig — '+floodStep+' Schritte');
+      extractEdges();
+    }
+    return;
+  }
+  // BFS expansion — process `steps` time layers
+  for(let s=0;s<steps&&floodQueueIdx<floodQueue.length;s++){
+    const curT=floodQueue[floodQueueIdx].t;
+    // Process all cells at current time
+    while(floodQueueIdx<floodQueue.length&&floodQueue[floodQueueIdx].t===curT){
+      const cell=floodQueue[floodQueueIdx++];
+      // 8-connected expansion
+      for(let dy=-1;dy<=1;dy++){
+        for(let dx=-1;dx<=1;dx++){
+          if(dx===0&&dy===0)continue;
+          const nx=cell.x+dx,ny=cell.y+dy;
+          if(nx<0||nx>=GW||ny<0||ny>=GH)continue;
+          const nIdx=ny*GW+nx;
+          if(grid[nIdx]===-1){
+            grid[nIdx]=cell.owner;
+            timeGrid[nIdx]=curT+1;
+            floodQueue.push({x:nx,y:ny,owner:cell.owner,t:curT+1});
+          }
+        }
+      }
+    }
+    floodStep=curT+1;
+  }
+}
+
+// ===== EDGE EXTRACTION (Phase 2) =====
+function extractEdges(){
+  showPhase('Phase 2 — Kanten extrahieren');
+  const edgeSet=new Map(); // "a-b" → weight
+  
+  for(let y=0;y<GH-1;y++){
+    for(let x=0;x<GW-1;x++){
+      const idx=y*GW+x;
+      const owner=grid[idx];
+      if(owner<0)continue;
+      // Check right and down neighbors
+      const neighbors=[
+        grid[idx+1],           // right
+        grid[(y+1)*GW+x],     // down
+        grid[(y+1)*GW+x+1],   // down-right
+      ];
+      for(const nb of neighbors){
+        if(nb>=0&&nb!==owner){
+          const a=Math.min(owner,nb),b=Math.max(owner,nb);
+          const key=a+'-'+b;
+          const w=timeGrid[idx]; // arrival time as weight proxy
+          if(!edgeSet.has(key)||w<edgeSet.get(key)){
+            edgeSet.set(key,w);
+          }
+        }
+      }
+    }
+  }
+  
+  edges=[];
+  for(const[key,weight] of edgeSet){
+    const[a,b]=key.split('-').map(Number);
+    // Compute actual Euclidean distance for tour quality measurement
+    const dx=cities[a].x-cities[b].x,dy=cities[a].y-cities[b].y;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    edges.push({a,b,weight,dist});
+  }
+  edges.sort((a,b)=>a.dist-b.dist);
+  
+  showPhase('Phase 2 fertig — '+edges.length+' Kanten');
+  updateStats();
+}
+
+// ===== TOUR CONSTRUCTION (Phase 3) =====
+function buildTour(){
+  if(edges.length===0){toast('Zuerst Flood starten!');return;}
+  showPhase('Phase 3 — Greedy Tour');_clearComp();
+  
+  const N=cities.length;
+  if(N<3){tour=[...Array(N).keys()];measureTour();nnTourLen=computeNN();hullIndices=[];lastMethod='greedy';updateStats();return;}
+  
+  // Step 1: Greedy on Delaunay edges — build path fragments
+  const degree=new Array(N).fill(0);
+  const adj=Array.from({length:N},()=>[]);
+  const sorted=[...edges].sort((a,b)=>a.dist-b.dist);
+  _ops.edgesConsidered=sorted.length;
+  
+  for(const e of sorted){
+    _ops.comparisons++;
+    if(degree[e.a]>=2||degree[e.b]>=2)continue;
+    // Check if adding creates a premature cycle
+    if(degree[e.a]>0&&degree[e.b]>0){
+      const visited=new Set();
+      const q=[e.a];visited.add(e.a);
+      let connected=false;
+      while(q.length>0){
+        const cur=q.shift();
+        if(cur===e.b){connected=true;break;}
+        for(const nb of adj[cur]){if(!visited.has(nb)){visited.add(nb);q.push(nb);}}
+      }
+      if(connected)continue;
+    }
+    degree[e.a]++;degree[e.b]++;
+    adj[e.a].push(e.b);adj[e.b].push(e.a);
+  }
+  
+  // Step 2: Collect all path fragments (chains)
+  const visited=new Set();
+  const fragments=[]; // each fragment is an ordered array of city indices
+  for(let i=0;i<N;i++){
+    if(visited.has(i))continue;
+    if(degree[i]===0){
+      // Isolated city — single-element fragment
+      fragments.push([i]);
+      visited.add(i);
+      continue;
+    }
+    if(degree[i]!==1)continue; // start from chain endpoints
+    // Walk the chain
+    const chain=[i];
+    visited.add(i);
+    let cur=i;
+    while(true){
+      let next=-1;
+      for(const nb of adj[cur]){if(!visited.has(nb)){next=nb;break;}}
+      if(next===-1)break;
+      chain.push(next);
+      visited.add(next);
+      cur=next;
+    }
+    fragments.push(chain);
+  }
+  // Any remaining unvisited (nodes in cycles — shouldn't happen but safety)
+  for(let i=0;i<N;i++){
+    if(!visited.has(i)){fragments.push([i]);visited.add(i);}
+  }
+  
+  // Step 3: Merge fragments into a single chain by connecting nearest endpoints
+  while(fragments.length>1){
+    let bestDist=Infinity,bestI=-1,bestJ=-1,bestFlipI=false,bestFlipJ=false;
+    for(let i=0;i<fragments.length;i++){
+      for(let j=i+1;j<fragments.length;j++){
+        const fi=fragments[i],fj=fragments[j];
+        // Try connecting: end of i → start of j
+        const combos=[
+          [fi[fi.length-1], fj[0],       false, false],
+          [fi[fi.length-1], fj[fj.length-1], false, true],
+          [fi[0],           fj[0],       true,  false],
+          [fi[0],           fj[fj.length-1], true,  true],
+        ];
+        for(const[a,b,flipI,flipJ] of combos){
+          const dx=cities[a].x-cities[b].x,dy=cities[a].y-cities[b].y;
+          const d=Math.sqrt(dx*dx+dy*dy);_ops.distCalc++;
+          if(d<bestDist){bestDist=d;bestI=i;bestJ=j;bestFlipI=flipI;bestFlipJ=flipJ;}
+        }
+      }
+    }
+    if(bestI<0)break;
+    // Merge bestI and bestJ
+    let fi=fragments[bestI], fj=fragments[bestJ];
+    if(bestFlipI)fi.reverse();
+    if(bestFlipJ)fj.reverse();
+    const merged=fi.concat(fj);
+    fragments.splice(bestJ,1); // remove j first (higher index)
+    fragments.splice(bestI,1); // then i
+    fragments.push(merged);
+  }
+  
+  // Step 4: Close into a tour
+  tour=fragments[0]||[];
+  
+  measureTour();
+  nnTourLen=computeNN();
+  hullIndices=[];
+  lastMethod='greedy';
+  showPhase('Greedy: '+tourLen.toFixed(0)+' px (NN: '+nnTourLen.toFixed(0)+')');
+  updateStats();
+}
+
+// ===== CONVEX HULL + CHEAPEST INSERTION =====
+function buildHullTour(){
+  if(!floodDone){toast('Zuerst Flood starten!');return;}
+  showPhase('Phase 3 — Hull + Insertion');_clearComp();
+  
+  const N=cities.length;
+  if(N<3){tour=[...Array(N).keys()];measureTour();return;}
+  
+  // Step 1: Find convex hull from Voronoi
+  // Cities whose Voronoi cells touch the canvas border are hull candidates
+  const touchesBorder=new Set();
+  // Top and bottom rows
+  for(let x=0;x<GW;x++){
+    if(grid[x]>=0) touchesBorder.add(grid[x]);                    // top
+    if(grid[(GH-1)*GW+x]>=0) touchesBorder.add(grid[(GH-1)*GW+x]); // bottom
+  }
+  // Left and right columns
+  for(let y=0;y<GH;y++){
+    if(grid[y*GW]>=0) touchesBorder.add(grid[y*GW]);              // left
+    if(grid[y*GW+GW-1]>=0) touchesBorder.add(grid[y*GW+GW-1]);   // right
+  }
+  
+  let hull=[...touchesBorder];
+  
+  // Fallback: if too few hull points, use geometric convex hull
+  if(hull.length<3){
+    hull=convexHullGraham();
+  } else {
+    // Order hull points clockwise by angle from centroid
+    let cx=0,cy=0;
+    for(const i of hull){cx+=cities[i].x;cy+=cities[i].y;}
+    cx/=hull.length;cy/=hull.length;
+    hull.sort((a,b)=>{
+      return Math.atan2(cities[a].y-cy,cities[a].x-cx) - Math.atan2(cities[b].y-cy,cities[b].x-cx);
+    });
+    
+    // Verify this is actually convex — if not, compute proper hull
+    if(!isConvexPolygon(hull)){
+      hull=convexHullGraham();
+    }
+  }
+  
+  // Step 2: Start tour with hull
+  tour=[...hull];
+  hullIndices=[...hull];
+  const inTour=new Set(tour);
+  
+  // Step 3: Cheapest insertion for remaining cities
+  // For each un-inserted city, find the tour edge where inserting it adds the least distance
+  const remaining=[];
+  for(let i=0;i<N;i++){if(!inTour.has(i))remaining.push(i);}
+  
+  // Sort remaining by distance to nearest hull city (farthest first = farthest insertion variant)
+  // Actually: cheapest insertion — insert whichever city has the cheapest insertion cost
+  _ops.edgesConsidered=edges.length; // Delaunay edges used for hull detection
+  
+  while(remaining.length>0){
+    let bestCost=Infinity, bestCity=-1, bestPos=-1;
+    
+    for(let ri=0;ri<remaining.length;ri++){
+      const ci=remaining[ri];
+      const c=cities[ci];
+      
+      for(let ti=0;ti<tour.length;ti++){
+        const a=cities[tour[ti]];
+        const b=cities[tour[(ti+1)%tour.length]];
+        const dAB=Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2);
+        const dAC=Math.sqrt((a.x-c.x)**2+(a.y-c.y)**2);
+        const dCB=Math.sqrt((c.x-b.x)**2+(c.y-b.y)**2);
+        _ops.distCalc+=3;_ops.comparisons++;
+        const cost=dAC+dCB-dAB;
+        if(cost<bestCost){
+          bestCost=cost;bestCity=ri;bestPos=ti+1;
+        }
+      }
+    }
+    
+    if(bestCity>=0){
+      tour.splice(bestPos,0,remaining[bestCity]);
+      remaining.splice(bestCity,1);
+    } else break;
+  }
+  
+  measureTour();
+  nnTourLen=computeNN();
+  lastMethod='hull';
+  showPhase('Hull+Insert: '+tourLen.toFixed(0)+' px (NN: '+nnTourLen.toFixed(0)+')');
+  updateStats();
+}
+
+function measureTour(){
+  tourLen=0;
+  for(let i=0;i<tour.length;i++){
+    const a=cities[tour[i]],b=cities[tour[(i+1)%tour.length]];
+    tourLen+=Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2);
+  }
+}
+
+// Graham scan convex hull (fallback)
+function convexHullGraham(){
+  const pts=cities.map((c,i)=>({x:c.x,y:c.y,i}));
+  // Find bottom-most (then left-most)
+  pts.sort((a,b)=>a.y!==b.y?b.y-a.y:a.x-b.x);
+  const pivot=pts[0];
+  const rest=pts.slice(1);
+  // Sort by polar angle from pivot
+  rest.sort((a,b)=>{
+    const angA=Math.atan2(pivot.y-a.y,a.x-pivot.x);
+    const angB=Math.atan2(pivot.y-b.y,b.x-pivot.x);
+    if(Math.abs(angA-angB)<1e-9){
+      const dA=(a.x-pivot.x)**2+(a.y-pivot.y)**2;
+      const dB=(b.x-pivot.x)**2+(b.y-pivot.y)**2;
+      return dA-dB;
+    }
+    return angA-angB;
+  });
+  
+  const stack=[pivot,rest[0]];
+  for(let i=1;i<rest.length;i++){
+    while(stack.length>1){
+      const top=stack[stack.length-1],sec=stack[stack.length-2];
+      const cross=(top.x-sec.x)*(rest[i].y-sec.y)-(top.y-sec.y)*(rest[i].x-sec.x);
+      if(cross<=0)stack.pop(); else break;
+    }
+    stack.push(rest[i]);
+  }
+  return stack.map(p=>p.i);
+}
+
+function isConvexPolygon(indices){
+  const n=indices.length;
+  if(n<3)return false;
+  let sign=0;
+  for(let i=0;i<n;i++){
+    const a=cities[indices[i]];
+    const b=cities[indices[(i+1)%n]];
+    const c=cities[indices[(i+2)%n]];
+    const cross=(b.x-a.x)*(c.y-a.y)-(b.y-a.y)*(c.x-a.x);
+    if(cross!==0){
+      if(sign===0)sign=cross>0?1:-1;
+      else if((cross>0?1:-1)!==sign)return false;
+    }
+  }
+  return true;
+}
+
+function computeNN(){
+  const N=cities.length;if(N<2)return 0;
+  const visited=new Set();
+  let cur=0,len=0;
+  visited.add(0);
+  for(let i=1;i<N;i++){
+    let bestD=Infinity,bestJ=-1;
+    for(let j=0;j<N;j++){
+      if(visited.has(j))continue;
+      const dx=cities[cur].x-cities[j].x,dy=cities[cur].y-cities[j].y;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      if(d<bestD){bestD=d;bestJ=j;}
+    }
+    if(bestJ>=0){len+=bestD;visited.add(bestJ);cur=bestJ;}
+  }
+  len+=Math.sqrt((cities[cur].x-cities[0].x)**2+(cities[cur].y-cities[0].y)**2);
+  return len;
+}
+
+// ===== NN TOUR (sets tour[], not just length) =====
+function buildNNTour(){
+  const N=cities.length;
+  if(N<3){toast('Mindestens 3 Städte!');return;}
+  showPhase('NN auf vollständigem Graph');_clearComp();
+  
+  let bestTour=null, bestLen=Infinity;
+  const maxStarts=Math.min(N,30);
+  for(let start=0;start<maxStarts;start++){
+    const visited=new Set();
+    const t=[start];
+    visited.add(start);
+    let cur=start,len=0;
+    for(let i=1;i<N;i++){
+      let bestD=Infinity,bestJ=-1;
+      for(let j=0;j<N;j++){
+        if(visited.has(j))continue;
+        const dx=cities[cur].x-cities[j].x,dy=cities[cur].y-cities[j].y;
+        const d=dx*dx+dy*dy;
+        _ops.distCalc++;_ops.comparisons++;
+        if(d<bestD){bestD=d;bestJ=j;}
+      }
+      if(bestJ>=0){
+        t.push(bestJ);visited.add(bestJ);
+        len+=Math.sqrt(bestD);cur=bestJ;
+      }
+    }
+    len+=Math.sqrt((cities[cur].x-cities[start].x)**2+(cities[cur].y-cities[start].y)**2);
+    _ops.distCalc++;
+    if(len<bestLen){bestLen=len;bestTour=[...t];}
+  }
+  _ops.edgesConsidered=N*(N-1)/2;
+  tour=bestTour||[];
+  hullIndices=[];
+  measureTour();
+  nnTourLen=bestLen;
+  lastMethod='nn';
+  showPhase('NN: '+tourLen.toFixed(0)+' px (best of '+maxStarts+' starts)');
+  updateStats();
+}
+
+// ===== STANDARD GREEDY on COMPLETE GRAPH (Bentley 1992) =====
+function buildStdGreedy(){
+  const N=cities.length;
+  if(N<3){toast('Mindestens 3 Städte!');return;}
+  showPhase('Greedy auf vollständigem Graph...');_clearComp();
+  
+  // Step 1: Generate ALL edges and sort by distance
+  const allEdges=[];
+  for(let i=0;i<N;i++){
+    for(let j=i+1;j<N;j++){
+      const dx=cities[i].x-cities[j].x,dy=cities[i].y-cities[j].y;
+      allEdges.push({a:i,b:j,dist:Math.sqrt(dx*dx+dy*dy)});
+      _ops.distCalc++;
+    }
+  }
+  _ops.edgesConsidered=allEdges.length;
+  allEdges.sort((a,b)=>a.dist-b.dist);
+  
+  // Step 2: Greedy edge insertion (degree ≤ 2, no premature cycle)
+  const degree=new Array(N).fill(0);
+  const adj=Array.from({length:N},()=>[]);
+  // Union-Find for fast cycle detection
+  const parent=new Int32Array(N);
+  const rank=new Uint8Array(N);
+  for(let i=0;i<N;i++)parent[i]=i;
+  function find(x){while(parent[x]!==x)x=parent[x]=parent[parent[x]];return x;}
+  function unite(a,b){
+    a=find(a);b=find(b);
+    if(a===b)return false;
+    if(rank[a]<rank[b]){const t=a;a=b;b=t;}
+    parent[b]=a;if(rank[a]===rank[b])rank[a]++;
+    return true;
+  }
+  
+  let edgesAdded=0;
+  for(const e of allEdges){
+    if(edgesAdded>=N)break;
+    _ops.comparisons++;
+    if(degree[e.a]>=2||degree[e.b]>=2)continue;
+    // Allow cycle only if it's the last edge (closing the tour)
+    if(find(e.a)===find(e.b)){
+      if(edgesAdded<N-1)continue; // premature cycle
+    }
+    degree[e.a]++;degree[e.b]++;
+    adj[e.a].push(e.b);adj[e.b].push(e.a);
+    unite(e.a,e.b);
+    edgesAdded++;
+  }
+  
+  // Step 3: Walk the tour
+  tour=[];
+  const visited=new Set();
+  let cur=0;
+  for(let i=0;i<N;i++){
+    tour.push(cur);visited.add(cur);
+    let next=-1;
+    for(const nb of adj[cur]){if(!visited.has(nb)){next=nb;break;}}
+    if(next===-1)break;
+    cur=next;
+  }
+  
+  hullIndices=[];
+  measureTour();
+  nnTourLen=computeNN();
+  lastMethod='greedy-v';
+  showPhase('Greedy-V: '+tourLen.toFixed(0)+' px (NN: '+nnTourLen.toFixed(0)+')');
+  updateStats();
+}
+
+// ===== RUN ALL COMPARISON =====
+let comparisonResults={};
+let _runAllActive=false;
+function _clearComp(){if(!_runAllActive)comparisonResults={};}
+
+// Operation counter — reset before each method
+let _ops={distCalc:0, comparisons:0, edgesConsidered:0, twoOptSwaps:0, twoOptIter:0};
+function _resetOps(){_ops={distCalc:0,comparisons:0,edgesConsidered:0,twoOptSwaps:0,twoOptIter:0};}
+
+function _runMethod(buildFn){
+  _resetOps();
+  const t0=performance.now();
+  buildFn();
+  const tBuild=performance.now()-t0;
+  const rawLen=tourLen;
+  const rawTour=[...tour];
+  const buildOps={..._ops};
+  
+  _resetOps();
+  const t1=performance.now();
+  twoOpt();
+  const tOpt=performance.now()-t1;
+  const optLen=tourLen;
+  const optTour=[...tour];
+  const optOps={..._ops};
+  
+  return{
+    before:rawLen, after:optLen, tour:optTour,
+    tBuild: tBuild.toFixed(1),
+    tOpt: tOpt.toFixed(1),
+    tTotal: (tBuild+tOpt).toFixed(1),
+    buildOps, optOps,
+    edgesUsed: buildOps.edgesConsidered,
+    distCalcs: buildOps.distCalc + optOps.distCalc,
+    twoOptSwaps: optOps.twoOptSwaps,
+    twoOptIter: optOps.twoOptIter,
+  };
+}
+
+function runAll(){
+  if(!floodDone){toast('Zuerst Flood starten!');return;}
+  const N=cities.length;
+  if(N<3)return;
+  comparisonResults={};
+  _runAllActive=true;
+  
+  // Measure flood time retroactively (already done, just store grid size)
+  comparisonResults._flood={cells:GW*GH, steps:floodStep, edges:edges.length, N};
+  
+  try{comparisonResults.nn=_runMethod(buildNNTour);}catch(e){console.error('NN failed',e);}
+  try{comparisonResults.greedyV=_runMethod(buildStdGreedy);}catch(e){console.error('Greedy-V failed',e);}
+  try{comparisonResults.greedyD=_runMethod(buildTour);}catch(e){console.error('Greedy-D failed',e);}
+  try{comparisonResults.hull=_runMethod(buildHullTour);}catch(e){console.error('Hull failed',e);}
+  
+  // Keep the best 2-opt tour as active
+  let bestKey=null,bestLen=Infinity;
+  for(const key of ['nn','greedyV','greedyD','hull']){
+    const r=comparisonResults[key];
+    if(r&&r.after<bestLen){bestLen=r.after;bestKey=key;} 
+  }
+  if(bestKey&&comparisonResults[bestKey].tour){
+    tour=[...comparisonResults[bestKey].tour];
+    measureTour();
+  }
+  
+  _runAllActive=false;
+  lastMethod='compare';
+  showPhase('Vergleich abgeschlossen');
+  updateStats();
+}
+
+// ===== 2-OPT IMPROVEMENT =====
+function twoOpt(){
+  if(tour.length<4){toast('Zuerst Tour bauen!');return;}
+  const maxIter=tour.length>100?200:tour.length>50?300:500;
+  let improved=true;
+  let iterations=0;
+  while(improved&&iterations<maxIter){
+    improved=false;iterations++;
+    for(let i=0;i<tour.length-1;i++){
+      for(let j=i+2;j<tour.length;j++){
+        if(j===tour.length-1&&i===0)continue;
+        const a=cities[tour[i]],b=cities[tour[i+1]];
+        const c=cities[tour[j]],d=cities[tour[(j+1)%tour.length]];
+        const before=Math.sqrt((a.x-b.x)**2+(a.y-b.y)**2)+Math.sqrt((c.x-d.x)**2+(c.y-d.y)**2);
+        const after=Math.sqrt((a.x-c.x)**2+(a.y-c.y)**2)+Math.sqrt((b.x-d.x)**2+(b.y-d.y)**2);
+        _ops.distCalc+=4;_ops.comparisons++;
+        if(after<before-0.5){
+          const seg=tour.slice(i+1,j+1);seg.reverse();
+          tour.splice(i+1,j-i,...seg);
+          improved=true;
+          _ops.twoOptSwaps++;
+        }
+      }
+    }
+  }
+  _ops.twoOptIter=iterations;
+  measureTour();
+  lastMethod='2opt';
+  showPhase('2-opt: '+tourLen.toFixed(0)+' px ('+iterations+' Iter.)');
+  updateStats();
+}
+
+// ===== RENDERING =====
+function draw(){
+  ctx.fillStyle=var_bg;ctx.fillRect(0,0,WC,HC);
+  
+  // Grid
+  ctx.strokeStyle='#0a1020';ctx.lineWidth=0.5;
+  for(let x=0;x<WC;x+=80){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,HC);ctx.stroke();}
+  for(let y=0;y<HC;y+=80){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(WC,y);ctx.stroke();}
+  
+  // Voronoi / density visualization
+  if(grid&&(floodDone||flooding)){
+    const imgData=ctx.createImageData(GW,GH);
+    const d=imgData.data;
+    
+    for(let y=0;y<GH;y++){
+      for(let x=0;x<GW;x++){
+        const idx=y*GW+x;
+        const pi=(y*GW+x)*4;
+        const owner=grid[idx];
+        
+        if(owner>=0){
+          const col=CITY_COLORS[owner%CITY_COLORS.length];
+          const t=timeGrid[idx];
+          
+          if(viewMode==='voronoi'){
+            // Check if boundary cell
+            let isBoundary=false;
+            if(x>0&&grid[idx-1]>=0&&grid[idx-1]!==owner)isBoundary=true;
+            if(x<GW-1&&grid[idx+1]>=0&&grid[idx+1]!==owner)isBoundary=true;
+            if(y>0&&grid[idx-GW]>=0&&grid[idx-GW]!==owner)isBoundary=true;
+            if(y<GH-1&&grid[idx+GW]>=0&&grid[idx+GW]!==owner)isBoundary=true;
+            
+            if(isBoundary){
+              d[pi]=220;d[pi+1]=230;d[pi+2]=240;d[pi+3]=180;
+            }else{
+              d[pi]=col[0];d[pi+1]=col[1];d[pi+2]=col[2];
+              d[pi+3]=35+Math.min(40,t*0.3)|0;
+            }
+          }else if(viewMode==='density'){
+            const brightness=Math.max(10,120-t*0.8)|0;
+            d[pi]=col[0];d[pi+1]=col[1];d[pi+2]=col[2];d[pi+3]=brightness;
+          }
+        }
+      }
+    }
+    
+    // Scale up the small image
+    const tmpCvs=document.createElement('canvas');
+    tmpCvs.width=GW;tmpCvs.height=GH;
+    tmpCvs.getContext('2d').putImageData(imgData,0,0);
+    ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(tmpCvs,0,0,WC,HC);
+    ctx.imageSmoothingEnabled=true;
+  }
+  
+  // Delaunay edges
+  if((viewMode==='edges'||tour.length>0)&&edges.length>0&&floodDone){
+    for(const e of edges){
+      const a=cities[e.a],b=cities[e.b];
+      ctx.strokeStyle='rgba(56,189,248,0.12)';ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+    }
+  }
+  
+  // Convex Hull (dashed green)
+  if(hullIndices.length>2){
+    ctx.strokeStyle='rgba(52,211,153,0.35)';ctx.lineWidth=1.5;ctx.setLineDash([6,4]);
+    ctx.beginPath();
+    ctx.moveTo(cities[hullIndices[0]].x,cities[hullIndices[0]].y);
+    for(let i=1;i<hullIndices.length;i++){
+      ctx.lineTo(cities[hullIndices[i]].x,cities[hullIndices[i]].y);
+    }
+    ctx.closePath();ctx.stroke();ctx.setLineDash([]);
+    // Mark hull vertices
+    for(const hi of hullIndices){
+      ctx.beginPath();ctx.arc(cities[hi].x,cities[hi].y,10,0,Math.PI*2);
+      ctx.strokeStyle='rgba(52,211,153,0.25)';ctx.lineWidth=1.5;ctx.stroke();
+    }
+  }
+
+  // Tour
+  if(tour.length>1){
+    ctx.strokeStyle='#fbbf24';ctx.lineWidth=2.5;ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(cities[tour[0]].x,cities[tour[0]].y);
+    for(let i=1;i<tour.length;i++){
+      ctx.lineTo(cities[tour[i]].x,cities[tour[i]].y);
+    }
+    ctx.closePath();ctx.stroke();
+    
+    // Direction arrows
+    for(let i=0;i<tour.length;i++){
+      const a=cities[tour[i]],b=cities[tour[(i+1)%tour.length]];
+      const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;
+      const dx=b.x-a.x,dy=b.y-a.y,len=Math.sqrt(dx*dx+dy*dy);
+      if(len<30)continue;
+      const nx=dx/len,ny=dy/len;
+      ctx.fillStyle='#fbbf24';
+      ctx.beginPath();
+      ctx.moveTo(mx+nx*6,my+ny*6);
+      ctx.lineTo(mx-nx*3-ny*4,my-ny*3+nx*4);
+      ctx.lineTo(mx-nx*3+ny*4,my-ny*3-nx*4);
+      ctx.closePath();ctx.fill();
+    }
+  }
+  
+  // Flood wavefront ring (during animation)
+  if(flooding&&floodQueueIdx<floodQueue.length){
+    const curT=floodQueue[floodQueueIdx].t;
+    ctx.strokeStyle='rgba(255,255,255,0.08)';ctx.lineWidth=1;
+    for(const c of cities){
+      const r=curT*CELL;
+      ctx.beginPath();ctx.arc(c.x,c.y,r,0,Math.PI*2);ctx.stroke();
+    }
+  }
+  
+  // Cities
+  for(let i=0;i<cities.length;i++){
+    const c=cities[i];
+    const col=CITY_COLORS[i%CITY_COLORS.length];
+    const colStr=`rgb(${col[0]},${col[1]},${col[2]})`;
+    
+    // Glow
+    const g=ctx.createRadialGradient(c.x,c.y,0,c.x,c.y,20);
+    g.addColorStop(0,`rgba(${col[0]},${col[1]},${col[2]},0.3)`);
+    g.addColorStop(1,'transparent');
+    ctx.fillStyle=g;ctx.fillRect(c.x-20,c.y-20,40,40);
+    
+    // Dot
+    ctx.beginPath();ctx.arc(c.x,c.y,6,0,Math.PI*2);
+    ctx.fillStyle=colStr;ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,0.5)';ctx.lineWidth=1.5;ctx.stroke();
+    
+    // Label
+    ctx.font='bold 10px JetBrains Mono';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle='#000';ctx.fillText(i,c.x,c.y);
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';
+    
+    // Name below
+    ctx.font='9px JetBrains Mono';ctx.fillStyle=`rgba(${col[0]},${col[1]},${col[2]},0.6)`;
+    ctx.textAlign='center';ctx.fillText(String.fromCharCode(65+i%26)+(i>=26?Math.floor(i/26):''),c.x,c.y+16);
+    ctx.textAlign='left';ctx.textBaseline='alphabetic';
+  }
+}
+
+const var_bg='rgba(6,10,16,0.95)';
+
+function updateStats(){
+  let html=`Städte: <span class="v">${cities.length}</span>`;
+  if(floodDone){
+    html+=` | Flood: <span class="v">${floodStep}</span> Schritte<br>`;
+    html+=`Delaunay-Kanten: <span class="v2">${edges.length}</span>`;
+    if(hullIndices.length>0)html+=` | Hülle: <span class="v2">${hullIndices.length}</span>`;
+    html+=`<br>`;
+    
+    // Comparison table
+    const hasComp=lastMethod==='compare';
+    if(hasComp){
+      const r=comparisonResults;
+      const rows=[
+        ['NN',          r.nn,     'vr'],
+        ['Greedy-V',    r.greedyV,'vr'],
+        ['Greedy-D',    r.greedyD,'vw'],
+        ['Hull+Insert', r.hull,   'v2'],
+      ].filter(row=>row[1]);
+      
+      const afterVals=rows.map(r=>r[1].after).filter(v=>isFinite(v));
+      const best=afterVals.length>0?Math.min(...afterVals):Infinity;
+      
+      // === TOUR QUALITY TABLE ===
+      html+=`<br><span style="color:var(--acc)">━━ Tourlänge ━━━━━</span><br>`;
+      for(const[name,d,cls] of rows){
+        const isBest=d.after<=best+0.5;
+        const mark=isBest?' ◀':'';
+        html+=`<span class="${cls}">${name}</span> `;
+        html+=`<span style="color:var(--dim)">${d.before.toFixed(0)}</span> → `;
+        html+=`<b class="${isBest?'v2':cls}">${d.after.toFixed(0)}</b>${mark}<br>`;
+      }
+      
+      // === PERFORMANCE TABLE ===
+      const fmtK=n=>n>=1e6?(n/1e6).toFixed(1)+'M':n>=1e3?(n/1e3).toFixed(1)+'K':''+n;
+      
+      html+=`<br><span style="color:var(--acc)">━━ Rechenaufwand ━━</span><br>`;
+      
+      // Flood cost (shared)
+      if(r._flood){
+        const f=r._flood;
+        html+=`<span style="color:var(--dim)">Flood: ${f.cells} Zellen × ${f.steps} Schr.</span><br>`;
+        html+=`<span style="color:var(--dim)">= ${fmtK(f.cells*f.steps)} Zell-Ops</span><br><br>`;
+      }
+      
+      html+=`<span style="color:var(--dim)">Methode | Zeit | √-Ops | Kanten</span><br>`;
+      for(const[name,d,cls] of rows){
+        const tb=parseFloat(d.tBuild);
+        const to=parseFloat(d.tOpt);
+        html+=`<span class="${cls}">${name}</span><br>`;
+        html+=`  Bau: <span class="v">${d.tBuild}ms</span>`;
+        html+=` √: <span class="v">${fmtK(d.buildOps.distCalc)}</span>`;
+        html+=` E: <span class="v">${fmtK(d.edgesUsed)}</span><br>`;
+        html+=`  2opt: <span class="v">${d.tOpt}ms</span>`;
+        html+=` √: <span class="v">${fmtK(d.optOps.distCalc)}</span>`;
+        html+=` Swaps: <span class="v">${d.twoOptSwaps}</span>`;
+        html+=` (${d.twoOptIter} It.)<br>`;
+        html+=`  <span class="vw">Σ ${d.tTotal}ms</span>`;
+        html+=` | Σ√: <span class="vw">${fmtK(d.distCalcs)}</span><br>`;
+      }
+      
+      // Highlight key insight
+      const nnR=r.nn, hullR=r.hull;
+      if(nnR&&hullR){
+        const nnTotal=parseFloat(nnR.tTotal), hullTotal=parseFloat(hullR.tTotal);
+        const speedup=(nnTotal/hullTotal).toFixed(1);
+        const nnSqrt=nnR.distCalcs, hullSqrt=hullR.distCalcs;
+        const sqrtRatio=(nnSqrt/hullSqrt).toFixed(1);
+        html+=`<br><span style="color:var(--dim)">━━ Fazit ━━━━━━━━━</span><br>`;
+        html+=`NN/Hull Zeit: <span class="vw">${speedup}×</span><br>`;
+        html+=`NN/Hull √-Ops: <span class="vw">${sqrtRatio}×</span>`;
+      }
+    } else if(tour.length>0){
+      const methodNames={greedy:'Greedy-D','greedy-v':'Greedy-V',hull:'Hull+Insert','2opt':'+ 2-opt',nn:'NN',compare:'Vergleich'};
+      html+=`<br><span class="vw">Methode: ${methodNames[lastMethod]||lastMethod}</span><br>`;
+      html+=`Tour: <span class="vw">${tourLen.toFixed(0)} px</span> (${tour.length} Städte)<br>`;
+      if(nnTourLen>0){
+        const ratio=((tourLen/nnTourLen-1)*100);
+        const better=tourLen<nnTourLen;
+        html+=`NN-Referenz: <span class="vr">${nnTourLen.toFixed(0)} px</span>`;
+        html+=` Δ=<span class="${better?'v2':'vr'}">${ratio>0?'+':''}${ratio.toFixed(1)}%</span>`;
+      }
+    }
+  } else if(flooding){
+    html+=` | Schritt: <span class="v">${floodStep}</span>`;
+    html+=` | Queue: <span class="vw">${floodQueue.length-floodQueueIdx}</span>`;
+  }
+  document.getElementById('stats').innerHTML=html;
+}
+
+// ===== INTERACTION =====
+canvas.addEventListener('click',e=>{
+  if(flooding)return;
+  const r=canvas.getBoundingClientRect();
+  const mx=e.clientX-r.left,my=e.clientY-r.top;
+  // Don't place too close to existing city
+  for(const c of cities){
+    if(Math.sqrt((c.x-mx)**2+(c.y-my)**2)<20)return;
+  }
+  cities.push({x:mx,y:my});
+  tour=[];tourLen=0;floodDone=false;grid=null;
+  updateStats();
+});
+
+function randomCities(n){
+  if(flooding)return;
+  cities=[];tour=[];edges=[];grid=null;floodDone=false;hullIndices=[];comparisonResults={};lastMethod='';
+  const margin=40;
+  const minDist=n>100?18:n>50?25:35; // tighter for more cities
+  for(let i=0;i<n;i++){
+    let x,y,ok;
+    for(let tries=0;tries<200;tries++){
+      x=margin+Math.random()*(WC-2*margin);
+      y=margin+Math.random()*(HC-2*margin);
+      ok=true;
+      for(const c of cities){if(Math.sqrt((c.x-x)**2+(c.y-y)**2)<minDist){ok=false;break;}}
+      if(ok)break;
+    }
+    if(ok!==false)cities.push({x,y});
+  }
+  updateStats();
+}
+
+function clearAll(){
+  cities=[];tour=[];edges=[];grid=null;flooding=false;floodDone=false;floodQueue=[];floodQueueIdx=0;hullIndices=[];lastMethod='';
+  showPhase('');updateStats();
+}
+
+function resetFlood(){
+  tour=[];edges=[];grid=null;flooding=false;floodDone=false;floodQueue=[];floodQueueIdx=0;floodStep=0;hullIndices=[];lastMethod='';
+  showPhase('');updateStats();
+}
+
+function toggleView(mode){
+  viewMode=mode;
+  ['btnVoro','btnDens','btnEdge'].forEach(id=>document.getElementById(id).classList.remove('active'));
+  if(mode==='voronoi')document.getElementById('btnVoro').classList.add('active');
+  if(mode==='density')document.getElementById('btnDens').classList.add('active');
+  if(mode==='edges')document.getElementById('btnEdge').classList.add('active');
+}
+
+// Slider
+const sSpeed=document.getElementById('pSpeed'),vSpeed=document.getElementById('vSpeed');
+sSpeed.addEventListener('input',()=>{vSpeed.textContent=sSpeed.value;});
+
+// ===== LOOP =====
+function loop(){
+  const speed=+sSpeed.value;
+  if(flooding)floodTick(speed);
+  draw();
+  if(flooding)updateStats();
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize',()=>{resize();});
+resize();
+loop();
+</script>
+</body>
+</html>
