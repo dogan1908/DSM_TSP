@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>TSP Distanz-Sphäre — Balban 2026</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a12;color:#e0e0e0;font-family:'Segoe UI',sans-serif;overflow:hidden;height:100vh}
+#info{position:absolute;top:12px;left:12px;font-size:11px;color:#888;line-height:1.6;pointer-events:none;z-index:10}
+#info h2{font-size:14px;color:#38bdf8;margin-bottom:4px}
+#info .sub{color:#666;font-size:10px}
+#controls{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:8px;z-index:10}
+#controls button{padding:5px 14px;border:1px solid #333;background:#181820;color:#aaa;border-radius:4px;cursor:pointer;font-size:11px;font-family:monospace}
+#controls button:hover{background:#38bdf8;color:#000;border-color:#38bdf8}
+#controls button.active{background:#38bdf8;color:#000}
+#legend{position:absolute;top:12px;right:14px;z-index:10;font-size:10px;font-family:monospace}
+.lrow{display:flex;align-items:center;gap:6px;margin:2px 0}
+.lbox{width:14px;height:10px;border-radius:2px}
+canvas{display:block}
+</style>
+</head>
+<body>
+<div id="info">
+  <h2>TSP Distanz-Sphäre</h2>
+  Szenario 3 — 15 Städte<br>
+  Spalten = Tour (ungerade Pos.)<br>
+  Zeilen = Tour (gerade Pos.)<br>
+  <span class="sub">Ziehen = drehen · Scrollen = zoom</span>
+</div>
+<div id="legend">
+  <div class="lrow"><div class="lbox" style="background:#1a0540"></div> &lt;3 (nah)</div>
+  <div class="lrow"><div class="lbox" style="background:#378ADD"></div> 3–5</div>
+  <div class="lrow"><div class="lbox" style="background:#34d399"></div> 5–7</div>
+  <div class="lrow"><div class="lbox" style="background:#EF9F27"></div> 7–10</div>
+  <div class="lrow"><div class="lbox" style="background:#E24B4A"></div> 10–13</div>
+  <div class="lrow"><div class="lbox" style="background:#501313"></div> &gt;13</div>
+  <div style="margin-top:8px;color:#38bdf8">— Tour-Helix</div>
+  <div style="color:#f472b6">● Städte</div>
+</div>
+<div id="controls">
+  <button onclick="toggleSpin()" id="btnSpin" class="active">Auto-Rotation</button>
+  <button onclick="toggleHelix()">Tour Ein/Aus</button>
+  <button onclick="toggleLabels()">Labels Ein/Aus</button>
+  <button onclick="resetView()">Reset</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// Data: Szenario 3
+var colLabels = ['B','N','H','K','J','I','M','E']; // ungerade Tour-Pos
+var rowLabels = ['A','O','D','G','C','L','F','B']; // gerade Tour-Pos
+var matrix = [
+  [2.63, 2.58, 9.56, 13.89, 15.07, 14.48, 11.81, 6.75],
+  [6.13, 4.75, 2.50, 7.80, 7.79, 9.65, 5.60, 2.51],
+  [10.83, 9.42, 2.50, 4.86, 3.14, 9.41, 5.02, 6.43],
+  [15.39, 13.73, 6.80, 4.14, 2.91, 12.48, 8.77, 11.09],
+  [16.83, 16.07, 9.59, 9.83, 4.32, 9.10, 7.49, 12.02],
+  [8.54, 9.20, 7.22, 12.17, 8.71, 3.60, 2.70, 4.64],
+  [7.44, 7.12, 3.92, 9.12, 6.83, 6.48, 2.55, 2.64],
+  [0, 2.73, 8.62, 13.60, 13.76, 12.01, 9.73, 4.81]
+];
+var nRows = matrix.length, nCols = matrix[0].length;
+var maxDist = 0;
+for (var i=0;i<nRows;i++) for (var j=0;j<nCols;j++) if(matrix[i][j]>maxDist) maxDist=matrix[i][j];
+
+// Tour sequence for helix: B→A→N→O→H→D→K→G→J→C→I→L→M→F→E→B
+var tourLabels = ['B','A','N','O','H','D','K','G','J','C','I','L','M','F','E'];
+
+// Color mapping
+function distToColor(d) {
+  var t = d / maxDist;
+  var stops = [
+    [0.00, 26, 5, 64],
+    [0.15, 83, 74, 183],
+    [0.30, 55, 138, 221],
+    [0.45, 52, 211, 153],
+    [0.60, 239, 159, 39],
+    [0.80, 226, 75, 74],
+    [1.00, 80, 19, 19]
+  ];
+  for (var i=0;i<stops.length-1;i++) {
+    if (t >= stops[i][0] && t <= stops[i+1][0]) {
+      var s = (t-stops[i][0])/(stops[i+1][0]-stops[i][0]);
+      var r = Math.round(stops[i][1]+(stops[i+1][1]-stops[i][1])*s);
+      var g = Math.round(stops[i][2]+(stops[i+1][2]-stops[i][2])*s);
+      var b = Math.round(stops[i][3]+(stops[i+1][3]-stops[i][3])*s);
+      return new THREE.Color(r/255, g/255, b/255);
+    }
+  }
+  return new THREE.Color(0.31, 0.08, 0.08);
+}
+
+// Scene
+var scene = new THREE.Scene();
+var camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 100);
+camera.position.set(0, 0, 4);
+var renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setClearColor(0x0a0a12);
+document.body.appendChild(renderer.domElement);
+
+// Sphere from matrix: rows = latitude (phi), cols = longitude (theta)
+var R = 1.5;
+var geom = new THREE.BufferGeometry();
+var positions = [];
+var colors = [];
+var indices = [];
+var res = 4; // subdivisions per cell
+
+for (var ri = 0; ri <= nRows * res; ri++) {
+  for (var ci = 0; ci <= nCols * res; ci++) {
+    var rowF = ri / res;
+    var colF = ci / res;
+    
+    // Map to sphere: row→phi (0=top pole, nRows=bottom), col→theta (0..2π)
+    var phi = (rowF / nRows) * Math.PI;
+    var theta = (colF / nCols) * 2 * Math.PI;
+    
+    var x = R * Math.sin(phi) * Math.cos(theta);
+    var y = R * Math.cos(phi);
+    var z = R * Math.sin(phi) * Math.sin(theta);
+    
+    positions.push(x, y, z);
+    
+    // Bilinear interpolation of color
+    var r0 = Math.min(Math.floor(rowF), nRows-1);
+    var c0 = Math.floor(colF) % nCols;
+    var r1 = Math.min(r0+1, nRows-1);
+    var c1 = (c0+1) % nCols;
+    var dr = rowF - r0;
+    var dc = colF - Math.floor(colF);
+    
+    var d00 = matrix[r0][c0];
+    var d01 = matrix[r0][c1];
+    var d10 = matrix[r1][c0];
+    var d11 = matrix[r1][c1];
+    var d = d00*(1-dr)*(1-dc) + d01*(1-dr)*dc + d10*dr*(1-dc) + d11*dr*dc;
+    
+    var col = distToColor(d);
+    colors.push(col.r, col.g, col.b);
+  }
+}
+
+var cols_total = nCols * res + 1;
+for (var ri = 0; ri < nRows * res; ri++) {
+  for (var ci = 0; ci < nCols * res; ci++) {
+    var a = ri * cols_total + ci;
+    var b = a + 1;
+    var c = a + cols_total;
+    var d = c + 1;
+    indices.push(a, c, b);
+    indices.push(b, c, d);
+  }
+}
+
+geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+geom.setIndex(indices);
+geom.computeVertexNormals();
+
+var mat = new THREE.MeshBasicMaterial({vertexColors: true, side: THREE.DoubleSide});
+var sphere = new THREE.Mesh(geom, mat);
+scene.add(sphere);
+
+// Wireframe overlay (subtle grid)
+var wireMat = new THREE.MeshBasicMaterial({color:0xffffff, wireframe:true, transparent:true, opacity:0.03});
+var wireframe = new THREE.Mesh(geom.clone(), wireMat);
+scene.add(wireframe);
+
+// Tour helix: path from pole to pole
+var helixGroup = new THREE.Group();
+var helixPoints = [];
+var nTour = tourLabels.length;
+for (var i = 0; i <= nTour; i++) {
+  var t = i / nTour;
+  var phi = t * Math.PI; // top to bottom
+  var theta = t * 2 * Math.PI; // one full revolution
+  var rr = R * 1.008; // slightly above surface
+  var x = rr * Math.sin(phi) * Math.cos(theta);
+  var y = rr * Math.cos(phi);
+  var z = rr * Math.sin(phi) * Math.sin(theta);
+  helixPoints.push(new THREE.Vector3(x, y, z));
+}
+
+// Smooth the helix with CatmullRom
+var helixCurve = new THREE.CatmullRomCurve3(helixPoints, false);
+var helixGeom = new THREE.TubeGeometry(helixCurve, 200, 0.012, 8, false);
+var helixMat = new THREE.MeshBasicMaterial({color: 0x38bdf8, transparent: true, opacity: 0.9});
+var helixMesh = new THREE.Mesh(helixGeom, helixMat);
+helixGroup.add(helixMesh);
+
+// City markers on helix
+var spriteLabels = [];
+for (var i = 0; i < nTour; i++) {
+  var t = (i + 0.5) / nTour;
+  var phi = t * Math.PI;
+  var theta = t * 2 * Math.PI;
+  var rr = R * 1.04;
+  var x = rr * Math.sin(phi) * Math.cos(theta);
+  var y = rr * Math.cos(phi);
+  var z = rr * Math.sin(phi) * Math.sin(theta);
+  
+  // Dot
+  var dotGeom = new THREE.SphereGeometry(0.025, 8, 8);
+  var dotMat = new THREE.MeshBasicMaterial({color: 0xf472b6});
+  var dot = new THREE.Mesh(dotGeom, dotMat);
+  dot.position.set(x, y, z);
+  helixGroup.add(dot);
+  
+  // Label sprite
+  var canvas = document.createElement('canvas');
+  canvas.width = 64; canvas.height = 32;
+  var ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#f472b6';
+  ctx.font = 'bold 22px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(tourLabels[i], 32, 24);
+  var tex = new THREE.CanvasTexture(canvas);
+  var spriteMat = new THREE.SpriteMaterial({map: tex, transparent: true});
+  var sprite = new THREE.Sprite(spriteMat);
+  sprite.position.set(x * 1.12, y * 1.12, z * 1.12);
+  sprite.scale.set(0.25, 0.125, 1);
+  helixGroup.add(sprite);
+  spriteLabels.push(sprite);
+}
+scene.add(helixGroup);
+
+// Grid lines on sphere (row/col boundaries)
+var gridGroup = new THREE.Group();
+for (var ri = 0; ri <= nRows; ri++) {
+  var pts = [];
+  var phi = (ri/nRows)*Math.PI;
+  for (var ci = 0; ci <= 60; ci++) {
+    var theta = (ci/60)*2*Math.PI;
+    var rr = R*1.002;
+    pts.push(new THREE.Vector3(rr*Math.sin(phi)*Math.cos(theta), rr*Math.cos(phi), rr*Math.sin(phi)*Math.sin(theta)));
+  }
+  var lg = new THREE.BufferGeometry().setFromPoints(pts);
+  var lm = new THREE.LineBasicMaterial({color:0xffffff, transparent:true, opacity:0.08});
+  gridGroup.add(new THREE.Line(lg, lm));
+}
+for (var ci = 0; ci < nCols; ci++) {
+  var pts = [];
+  var theta = (ci/nCols)*2*Math.PI;
+  for (var ri = 0; ri <= 40; ri++) {
+    var phi = (ri/40)*Math.PI;
+    var rr = R*1.002;
+    pts.push(new THREE.Vector3(rr*Math.sin(phi)*Math.cos(theta), rr*Math.cos(phi), rr*Math.sin(phi)*Math.sin(theta)));
+  }
+  var lg = new THREE.BufferGeometry().setFromPoints(pts);
+  var lm = new THREE.LineBasicMaterial({color:0xffffff, transparent:true, opacity:0.08});
+  gridGroup.add(new THREE.Line(lg, lm));
+}
+scene.add(gridGroup);
+
+// Mouse interaction
+var isDragging = false, prevX = 0, prevY = 0;
+var rotX = 0.3, rotY = 0;
+var autoSpin = true, showHelix = true, showLabels = true;
+
+renderer.domElement.addEventListener('mousedown', function(e) { isDragging=true; prevX=e.clientX; prevY=e.clientY; });
+renderer.domElement.addEventListener('mousemove', function(e) {
+  if (!isDragging) return;
+  rotY += (e.clientX-prevX)*0.005;
+  rotX += (e.clientY-prevY)*0.005;
+  rotX = Math.max(-1.5, Math.min(1.5, rotX));
+  prevX=e.clientX; prevY=e.clientY;
+});
+renderer.domElement.addEventListener('mouseup', function() { isDragging=false; });
+renderer.domElement.addEventListener('wheel', function(e) {
+  camera.position.z += e.deltaY*0.003;
+  camera.position.z = Math.max(2, Math.min(8, camera.position.z));
+});
+
+function toggleSpin() { autoSpin=!autoSpin; document.getElementById('btnSpin').classList.toggle('active',autoSpin); }
+function toggleHelix() { helixGroup.visible=!helixGroup.visible; }
+function toggleLabels() { showLabels=!showLabels; spriteLabels.forEach(function(s){s.visible=showLabels;}); }
+function resetView() { rotX=0.3; rotY=0; camera.position.z=4; }
+
+function animate() {
+  requestAnimationFrame(animate);
+  if (autoSpin && !isDragging) rotY += 0.003;
+  sphere.rotation.x = rotX; sphere.rotation.y = rotY;
+  wireframe.rotation.x = rotX; wireframe.rotation.y = rotY;
+  helixGroup.rotation.x = rotX; helixGroup.rotation.y = rotY;
+  gridGroup.rotation.x = rotX; gridGroup.rotation.y = rotY;
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', function() {
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
